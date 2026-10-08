@@ -83,6 +83,42 @@
         </div>
       </section>
 
+      <section class="panel monitor" aria-labelledby="monitorTitle">
+        <div class="monitor-heading">
+          <div class="panel-title">
+            <span class="step">03</span><h2 id="monitorTitle">Request monitor</h2>
+          </div>
+          <div class="monitor-actions">
+            <span class="monitor-status" id="monitorStatus" role="status" aria-live="polite">Nhập backend URL và token để xem request</span>
+            <button class="icon-button" id="refreshMetrics" type="button">Làm mới</button>
+          </div>
+        </div>
+
+        <div class="monitor-cards">
+          <div class="metric"><span>Active requests</span><strong id="mActive">—</strong></div>
+          <div class="metric"><span>Occupied slots</span><strong id="mSlots">—</strong></div>
+          <div class="metric"><span>Waiting queue</span><strong id="mWaiting">—</strong></div>
+          <div class="metric"><span>Total requests</span><strong id="mTotal">—</strong></div>
+          <div class="metric"><span>Errors</span><strong id="mFailed">—</strong></div>
+          <div class="metric"><span>Recent p95</span><strong id="mP95">—</strong></div>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th><th>Request ID</th><th>Status</th><th>Audio</th>
+                <th>Queue</th><th>Inference</th><th>API time</th><th>RTF</th>
+              </tr>
+            </thead>
+            <tbody id="requestRows">
+              <tr><td class="empty-row" colspan="8">Chưa có request nào sau khi BE khởi động.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="monitor-footnote">Lịch sử gần nhất do BE giữ trong RAM (tối đa 100 request), reset khi BE khởi động lại. Audio và transcript không được lưu.</p>
+      </section>
+
       <footer>Audio chỉ được gửi tới backend để nhận dạng; backend không lưu file hoặc transcript. Đo E2E từ trình duyệt gồm thời gian upload và phản hồi mạng.</footer>
     </main>
   </body>

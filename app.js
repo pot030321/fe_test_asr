@@ -8,6 +8,8 @@ let mediaStream = null;
 let mediaRecorder = null;
 let recordedChunks = [];
 let previewUrl = null;
+let metricsTimer = null;
+let metricsLoading = false;
 
 apiBase.value = localStorage.getItem("asr-api-base") || "";
 tokenInput.value = sessionStorage.getItem("asr-api-token") || "";
@@ -49,15 +51,128 @@ async function checkBackend(base) {
   }
 }
 
+function formatSeconds(value) {
+  return Number.isFinite(Number(value)) ? `${Number(value).toFixed(2)} s` : "—";
+}
+
+function percentile(values, fraction) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * fraction) - 1)];
+}
+
+function setMonitorStatus(message, kind = "") {
+  const status = byId("monitorStatus");
+  status.textContent = message;
+  status.className = `monitor-status ${kind}`.trim();
+}
+
+function renderMetrics(data) {
+  const recent = Array.isArray(data.recent_requests) ? data.recent_requests : [];
+  const successful = recent.filter((item) => Number(item.status) < 400 && Number.isFinite(Number(item.request_s)));
+  byId("mActive").textContent = String(Number(data.active_requests || 0));
+  byId("mSlots").textContent = `${Number(data.processing_requests || 0)} / ${Number(data.max_inflight || 0)}`;
+  byId("mWaiting").textContent = String(Number(data.waiting_requests || 0));
+  byId("mTotal").textContent = String(Number(data.total_requests || 0));
+  byId("mFailed").textContent = String(Number(data.failed_requests || 0));
+  const p95 = percentile(successful.map((item) => Number(item.request_s)), 0.95);
+  byId("mP95").textContent = p95 == null ? "—" : formatSeconds(p95);
+
+  const rows = byId("requestRows");
+  rows.replaceChildren();
+  if (!recent.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 8;
+    cell.className = "empty-row";
+    cell.textContent = "Chưa có request nào sau khi BE khởi động.";
+    row.append(cell);
+    rows.append(row);
+    return;
+  }
+
+  for (const item of recent.slice(0, 30)) {
+    const row = document.createElement("tr");
+    const timestamp = item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : "—";
+    const statusCode = Number(item.status || 0);
+    const values = [
+      timestamp,
+      item.request_id || "—",
+      statusCode ? `${statusCode} ${statusCode < 400 ? "OK" : "error"}` : "—",
+      formatSeconds(item.audio_s),
+      formatSeconds(item.queue_s),
+      formatSeconds(item.inference_s),
+      formatSeconds(item.request_s),
+      Number.isFinite(Number(item.rtf)) ? Number(item.rtf).toFixed(3) : "—",
+    ];
+    values.forEach((value, index) => {
+      const cell = document.createElement("td");
+      cell.textContent = String(value);
+      if (index === 2) cell.className = statusCode < 400 ? "ok" : "failed";
+      row.append(cell);
+    });
+    rows.append(row);
+  }
+}
+
+async function refreshMetrics() {
+  if (metricsLoading) return;
+  const token = tokenInput.value.trim();
+  if (!token) {
+    setMonitorStatus("Nhập access token để xem request.");
+    return;
+  }
+
+  let base;
+  try { base = normalizedBase(); }
+  catch (error) { setMonitorStatus(error.message, "error"); return; }
+
+  metricsLoading = true;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${base}/api/metrics`, {
+      headers: { "X-ASR-Token": token },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+    renderMetrics(data);
+    setMonitorStatus(`Đang cập nhật · ${new Date().toLocaleTimeString()}`, "live");
+  } catch (error) {
+    const message = error.name === "AbortError" ? "quá 8 giây không phản hồi" : error.message;
+    setMonitorStatus(`Không tải được metrics · ${message}`, "error");
+  } finally {
+    clearTimeout(timeout);
+    metricsLoading = false;
+  }
+}
+
+function startMetricsPolling() {
+  if (metricsTimer) clearInterval(metricsTimer);
+  refreshMetrics();
+  metricsTimer = setInterval(refreshMetrics, 2500);
+}
+
 apiBase.addEventListener("change", () => {
   try {
     const base = normalizedBase();
     localStorage.setItem("asr-api-base", base);
     checkBackend(base);
+    startMetricsPolling();
   } catch (error) {
     byId("connectionState").textContent = error.message;
   }
 });
+
+tokenInput.addEventListener("change", () => {
+  const token = tokenInput.value.trim();
+  if (token) sessionStorage.setItem("asr-api-token", token);
+  else sessionStorage.removeItem("asr-api-token");
+  startMetricsPolling();
+});
+byId("refreshMetrics").addEventListener("click", refreshMetrics);
 
 audioInput.addEventListener("change", () => setAudio(audioInput.files?.[0] || null));
 
@@ -147,6 +262,7 @@ byId("transcribe").addEventListener("click", async () => {
   } finally {
     button.disabled = false;
     button.firstElementChild.textContent = "Chạy nhận dạng";
+    refreshMetrics();
   }
 });
 
@@ -168,4 +284,7 @@ byId("download").addEventListener("click", () => {
   URL.revokeObjectURL(url);
 });
 
-if (apiBase.value) checkBackend(apiBase.value);
+if (apiBase.value) {
+  checkBackend(apiBase.value);
+  startMetricsPolling();
+}
