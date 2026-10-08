@@ -44,8 +44,7 @@ async function checkBackend(base) {
   try {
     const response = await fetch(`${base}/healthz`, { method: "GET", cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const data = await response.json();
-    byId("connectionState").textContent = `Backend sẵn sàng · ${data.model || "ASR API"}`;
+    byId("connectionState").textContent = "Backend sẵn sàng";
   } catch (error) {
     byId("connectionState").textContent = `Chưa kết nối được · ${error.message}`;
   }
